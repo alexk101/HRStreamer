@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
 fun getHR(isBodySensorsPermissionGranted: Boolean): Pair<Float?, Long> {
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.observeAsState()
     var isPermissionGranted: Boolean? by remember { mutableStateOf(null) }
+    var hasStartedListening by remember { mutableStateOf(false) }
     var hr: Float? by remember { mutableStateOf(null) }
     val hr_time: Long?
 
@@ -186,15 +187,22 @@ fun getHR(isBodySensorsPermissionGranted: Boolean): Pair<Float?, Long> {
 
     val heartRateSensorState = rememberHeartRateSensorState(autoStart = false)
 
-    // BODY_SENSORS permission must be granted before accessing sensor
+    // Request permission when app returns to foreground.
     LaunchedEffect(lifecycleState) {
         if (lifecycleState == Lifecycle.Event.ON_RESUME) {
             isPermissionGranted = isBodySensorsPermissionGranted
-            if (isPermissionGranted == true) {
-                heartRateSensorState.startListening()
-            } else {
+            hasStartedListening = false
+            if (isPermissionGranted != true) {
                 permissionLauncher.launch(Manifest.permission.BODY_SENSORS)
             }
+        }
+    }
+
+    // Start sensor stream immediately after permission is granted.
+    LaunchedEffect(isPermissionGranted, hasStartedListening) {
+        if (isPermissionGranted == true && !hasStartedListening) {
+            heartRateSensorState.startListening()
+            hasStartedListening = true
         }
     }
 
