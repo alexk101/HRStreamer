@@ -206,8 +206,11 @@ class MainActivity : ComponentActivity() {
         isStreaming = !isStreaming
         if (isStreaming) {
             dataClient.addListener(clientDataViewModel)
+            val startIntent = HrStreamingService.startIntent(this)
+            startForegroundService(startIntent)
         } else {
             dataClient.removeListener(clientDataViewModel)
+            stopService(HrStreamingService.stopIntent(this))
         }
     }
 
