@@ -16,7 +16,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.util.Log
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -56,6 +55,7 @@ class MainActivity : ComponentActivity() {
 
     private val clientDataViewModel by viewModels<ClientDataViewModel>()
     private var isStreaming by mutableStateOf(false)
+    private var lastForegroundWriteTimestamp: Long? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +93,11 @@ class MainActivity : ComponentActivity() {
             Log.e("CSV", "Heart rate or timestamp is null. Data will not be written.")
             return
         }
+        if (lastForegroundWriteTimestamp == timestamp) {
+            // Compose recomposition can call this repeatedly; only write once/sample timestamp.
+            return
+        }
+        lastForegroundWriteTimestamp = timestamp
 
         val filename = "hr_data.csv"
         val context = application // Context is needed to access app storage
@@ -121,13 +126,11 @@ class MainActivity : ComponentActivity() {
                 // Write the new data line
                 bufferedWriter.write("$timestamp, $heartrate\n")
                 bufferedWriter.close() // Don't forget to close the file
-                Toast.makeText(this, "Data written to file successfully", Toast.LENGTH_SHORT).show()
                 Log.d("CSV", "Data written to file successfully")
             } catch (e: Exception) {
                 Log.e("CSV", "Error writing to CSV file: ${e.message}")
             }
         } else {
-            Toast.makeText(this, "Path is null, cannot write to file", Toast.LENGTH_SHORT).show()
             Log.e("CSV", "Path is null, cannot write to file")
         }
     }
@@ -171,6 +174,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (isStreaming) {
+            // Foreground mode: activity owns ingestion/writing.
+            stopService(HrStreamingService.stopIntent(this))
             dataClient.addListener(clientDataViewModel)
         }
         /*messageClient.addListener(clientDataViewModel)
@@ -196,7 +201,10 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         if (isStreaming) {
+            // Background mode: service owns ingestion/writing.
             dataClient.removeListener(clientDataViewModel)
+            val startIntent = HrStreamingService.startIntent(this)
+            startForegroundService(startIntent)
         }
         //messageClient.removeListener(clientDataViewModel)
         //capabilityClient.removeListener(clientDataViewModel)
@@ -205,9 +213,9 @@ class MainActivity : ComponentActivity() {
     private fun toggleStreaming() {
         isStreaming = !isStreaming
         if (isStreaming) {
+            // User can only toggle from foreground activity, so keep service off.
+            stopService(HrStreamingService.stopIntent(this))
             dataClient.addListener(clientDataViewModel)
-            val startIntent = HrStreamingService.startIntent(this)
-            startForegroundService(startIntent)
         } else {
             dataClient.removeListener(clientDataViewModel)
             stopService(HrStreamingService.stopIntent(this))
